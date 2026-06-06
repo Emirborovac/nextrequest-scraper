@@ -15,6 +15,7 @@ store.init()
 PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NextRequest Crash Monitor</title>
+{% if refresh %}<meta http-equiv="refresh" content="{{ refresh }}">{% endif %}
 <style>
 :root{--navy:#0b3d91;--ink:#1c2b3a;--muted:#6b7c91;--line:#dfe7f0;--red:#b23b3b;--pale:#fdeaea;}
 *{box-sizing:border-box}body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);background:#fff;font-size:15px}
@@ -37,7 +38,7 @@ tr.yes{background:var(--pale)}
 a{color:var(--navy)}
 </style></head><body><div class="page">
 <h1>NextRequest Crash-Report Monitor</h1>
-<p class="sub">Source: {{ base }} &middot; monitoring stream: &ldquo;{{ term or 'all' }}&rdquo;</p>
+<p class="sub">Source: {{ base }} &middot; monitoring stream: &ldquo;{{ term or 'all' }}&rdquo;{% if refresh %} &middot; auto-refreshes every {{ refresh }}s{% endif %}</p>
 <div class="cards">
   <div class="card"><div class="n">{{ "{:,}".format(stats.total) }}</div><div class="l">docs scanned</div></div>
   <div class="card crash"><div class="n">{{ "{:,}".format(stats.crash) }}</div><div class="l">crash reports found</div></div>
@@ -69,8 +70,8 @@ a{color:var(--navy)}
 {% if not crashes %}<tr><td colspan="20" class="empty">No crash reports identified yet — the monitor will list them here as they are found.</td></tr>{% endif %}
 </tbody></table></div>
 
-<h2>Recent classifications</h2>
-<div class="wrap"><table><thead><tr><th>Uploaded</th><th>Document</th><th>Crash?</th><th>Why</th></tr></thead><tbody>
+<h2>Recent classifications &mdash; why each was / wasn't flagged</h2>
+<div class="wrap"><table><thead><tr><th>Uploaded</th><th>Document</th><th>Crash?</th><th>Reason (why / why not a crash report)</th></tr></thead><tbody>
 {% for r in recent %}<tr class="{{ 'yes' if r.is_crash=='yes' else '' }}"><td>{{ r.created_at }}</td>
 <td>{{ r.title_file }}</td><td>{{ r.is_crash or '' }}</td><td>{{ r.ai_reason or '' }}</td></tr>{% endfor %}
 {% if not recent %}<tr><td colspan="4" class="empty">Nothing classified yet — run a seed or wait for the poll.</td></tr>{% endif %}
@@ -87,13 +88,14 @@ def index():
     dr = c.execute("SELECT MIN(created_at), MAX(created_at) FROM docs").fetchone()
     crashes = c.execute("SELECT * FROM docs WHERE is_crash='yes' ORDER BY created_at DESC LIMIT 1000").fetchall()
     recent = c.execute("SELECT created_at,title_file,is_crash,ai_reason FROM docs WHERE status='done' "
-                       "ORDER BY classified_at DESC LIMIT 60").fetchall()
+                       "ORDER BY classified_at DESC LIMIT 100").fetchall()
     runs = c.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 25").fetchall()
     c.close()
     return render_template_string(PAGE, stats=stats, by_status=by_status, dr=dr,
                                   crashes=crashes, recent=recent, runs=runs,
                                   fields=store.EXCEL_FIELDS, labels=store.EXCEL_LABELS,
-                                  base=nr.BASE, term=nr.SEARCH_TERM)
+                                  base=nr.BASE, term=nr.SEARCH_TERM,
+                                  refresh=int(os.environ.get("REFRESH_SECS", "20")))
 
 
 @app.route("/export.xlsx")
