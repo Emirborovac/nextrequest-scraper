@@ -1,4 +1,9 @@
 import sys, os, time
+try:
+    from dotenv import load_dotenv
+    load_dotenv()                      # read config from a .env file if present
+except Exception:
+    pass
 import store, nextrequest as nr, classify
 
 NO_AI = os.environ.get("NO_AI") == "1" or not os.environ.get("OPENAI_API_KEY")

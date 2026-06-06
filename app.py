@@ -1,4 +1,9 @@
 import io, os
+try:
+    from dotenv import load_dotenv
+    load_dotenv()                      # read config from a .env file if present
+except Exception:
+    pass
 from flask import Flask, render_template_string, send_file
 import store, nextrequest as nr
 from openpyxl import Workbook

@@ -25,11 +25,11 @@ export OPENAI_MODEL=gpt-4o-mini       # any vision-capable model your key suppor
 ## Run (one command)
 ```bash
 pip install -r requirements.txt
-export OPENAI_API_KEY=sk-...      # your key
-export OPENAI_MODEL=gpt-5-mini    # or gpt-4o-mini (cheaper)
-export SEED_DAYS=2                # backfill window on first run (start small)
-python app.py                    # runs the scraper (seed + 2h poll) AND the dashboard, with logging
+cp .env.example .env              # then edit .env: OPENAI_API_KEY, OPENAI_MODEL, SEED_DAYS...
+python app.py                    # reads .env, runs the scraper (seed + 2h poll) AND the dashboard, with logging
 ```
+Config is loaded from `.env` automatically (or set the same vars with `export …` — both work).
+`.env` is gitignored, so your key never gets committed.
 Then open **http://&lt;host&gt;:8080** — stat cards, the **Scraping operations** log
 (start / finish / new / parsed / crashes), the crash-report table (15 fields),
 recent classifications, and an Excel export button.

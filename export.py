@@ -1,4 +1,10 @@
-import sys, store
+import sys
+try:
+    from dotenv import load_dotenv
+    load_dotenv()                      # read config from a .env file if present
+except Exception:
+    pass
+import store
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
