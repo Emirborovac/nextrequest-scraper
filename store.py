@@ -1,4 +1,4 @@
-import sqlite3, os
+import sqlite3, os, time
 
 DB_PATH = os.environ.get("OAKLAND_DB", os.path.join(os.path.dirname(os.path.abspath(__file__)), "oakland.db"))
 
@@ -31,6 +31,9 @@ def init():
               + ", ".join('"%s" TEXT' % x for x in cols) + ")")
     for ix in ("created_at", "status", "is_crash"):
         c.execute('CREATE INDEX IF NOT EXISTS ix_%s ON docs("%s")' % (ix, ix))
+    c.execute("CREATE TABLE IF NOT EXISTS runs (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, "
+              "started_at TEXT, finished_at TEXT, status TEXT, new_docs INTEGER, "
+              "classified INTEGER, crashes INTEGER, note TEXT)")
     c.commit()
     c.close()
 
@@ -72,3 +75,28 @@ def counts():
          "done": c.execute("SELECT COUNT(*) FROM docs WHERE status='done'").fetchone()[0]}
     c.close()
     return r
+
+
+def _now():
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def start_run(kind):
+    c = connect()
+    cur = c.execute("INSERT INTO runs (kind, started_at, status) VALUES (?, ?, 'running')", (kind, _now()))
+    c.commit(); rid = cur.lastrowid; c.close()
+    return rid
+
+
+def finish_run(rid, status="done", new_docs=0, classified=0, crashes=0, note=""):
+    c = connect()
+    c.execute("UPDATE runs SET finished_at=?, status=?, new_docs=?, classified=?, crashes=?, note=? WHERE id=?",
+              (_now(), status, new_docs, classified, crashes, note[:300], rid))
+    c.commit(); c.close()
+
+
+def recent_runs(limit=25):
+    c = connect()
+    rows = c.execute("SELECT * FROM runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    c.close()
+    return rows

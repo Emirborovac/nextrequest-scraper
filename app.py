@@ -43,6 +43,18 @@ a{color:var(--navy)}
   &middot; statuses: {% for k,v in by_status.items() %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
 <a class="btn" href="/export.xlsx">&#8595; Export crash reports (Excel)</a>
 
+<h2>Scraping operations</h2>
+<div class="wrap"><table><thead><tr><th>#</th><th>Type</th><th>Started (UTC)</th><th>Finished (UTC)</th>
+<th>New docs</th><th>Parsed</th><th>Crashes</th><th>Status</th></tr></thead><tbody>
+{% for r in runs %}<tr class="{{ 'yes' if r.crashes and r.crashes>0 else '' }}">
+<td>{{ r.id }}</td><td>{{ r.kind }}</td><td>{{ r.started_at }}</td>
+<td>{{ r.finished_at if r.finished_at else 'running…' }}</td>
+<td>{{ '' if r.new_docs is none else r.new_docs }}</td>
+<td>{{ '' if r.classified is none else r.classified }}</td>
+<td>{{ '' if r.crashes is none else r.crashes }}</td><td>{{ r.status }}</td></tr>{% endfor %}
+{% if not runs %}<tr><td colspan="8" class="empty">No runs yet — start one with <code>run.py seed</code> or <code>run.py monitor</code>.</td></tr>{% endif %}
+</tbody></table></div>
+
 <h2>Crash reports ({{ crashes|length }})</h2>
 <div class="wrap"><table><thead><tr><th>Uploaded</th><th>Document</th>
 {% for f in fields %}<th>{{ labels[f] }}</th>{% endfor %}<th>Source</th></tr></thead><tbody>
@@ -71,9 +83,10 @@ def index():
     crashes = c.execute("SELECT * FROM docs WHERE is_crash='yes' ORDER BY created_at DESC LIMIT 1000").fetchall()
     recent = c.execute("SELECT created_at,title_file,is_crash,ai_reason FROM docs WHERE status='done' "
                        "ORDER BY classified_at DESC LIMIT 60").fetchall()
+    runs = c.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 25").fetchall()
     c.close()
     return render_template_string(PAGE, stats=stats, by_status=by_status, dr=dr,
-                                  crashes=crashes, recent=recent,
+                                  crashes=crashes, recent=recent, runs=runs,
                                   fields=store.EXCEL_FIELDS, labels=store.EXCEL_LABELS,
                                   base=nr.BASE, term=nr.SEARCH_TERM)
 
