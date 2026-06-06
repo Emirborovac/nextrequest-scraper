@@ -18,6 +18,8 @@ export OPENAI_API_KEY=sk-...          # set on the host, never commit it
 export OPENAI_MODEL=gpt-4o-mini       # any vision-capable model your key supports
 # optional — point at any NextRequest agency:
 # export NR_BASE=https://<agency>.nextrequest.com
+# optional — which result stream to monitor (default "redacted"; "" = all docs):
+# export NR_SEARCH=redacted
 ```
 
 ## Run

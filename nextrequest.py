@@ -1,6 +1,7 @@
 import urllib.request, urllib.parse, json, ssl, datetime, os, sys
 
 BASE = os.environ.get("NR_BASE", "https://oaklandca.nextrequest.com")
+SEARCH_TERM = os.environ.get("NR_SEARCH", "redacted")          # monitor the 'redacted' stream (set "" for all docs)
 CTX = ssl.create_default_context(); CTX.check_hostname = False; CTX.verify_mode = ssl.CERT_NONE
 CLASSIFIABLE = {"pdf"}                                          # only classify PDFs (skip video/audio/office)
 MAX_DL = int(os.environ.get("NR_MAX_BYTES", str(30 * 1024 * 1024)))   # skip files > 30MB (videos)
@@ -19,9 +20,12 @@ def _date(s):
         return None
 
 
-def list_page(page):
-    u = BASE + "/client/documents?" + urllib.parse.urlencode(
-        {"page": page, "sort_field": "created_at", "sort_order": "desc"})
+def list_page(page, term=None):
+    params = {"page": page, "sort_field": "created_at", "sort_order": "desc"}
+    t = SEARCH_TERM if term is None else term
+    if t:
+        params["search_term"] = t                              # monitor the 'redacted' result stream
+    u = BASE + "/client/documents?" + urllib.parse.urlencode(params)
     return json.loads(_get(u).read())
 
 
