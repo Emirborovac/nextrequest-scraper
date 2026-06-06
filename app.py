@@ -109,4 +109,10 @@ def export():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "8080")))
+    # Single entrypoint: `python app.py` runs the scraper (seed-if-empty + 2h poll)
+    # in a background thread AND serves the dashboard. Set RUN_MONITOR=0 for UI-only.
+    if os.environ.get("RUN_MONITOR", "1") != "0":
+        import threading, run
+        threading.Thread(target=run.monitor, daemon=True).start()
+        print("[app] monitor thread started (seed if empty, then poll every 2h)")
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "8080")), use_reloader=False)

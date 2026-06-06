@@ -22,27 +22,26 @@ export OPENAI_MODEL=gpt-4o-mini       # any vision-capable model your key suppor
 # export NR_SEARCH=redacted
 ```
 
-## Run
-
-**Turnkey monitor (recommended)** — seeds the backfill window once, then polls every 2h on its own:
+## Run (one command)
 ```bash
-python3 run.py monitor          # SEED_DAYS (default 15) then loops every POLL_SECONDS (default 7200)
+pip install -r requirements.txt
+export OPENAI_API_KEY=sk-...      # your key
+export OPENAI_MODEL=gpt-5-mini    # or gpt-4o-mini (cheaper)
+export SEED_DAYS=2                # backfill window on first run (start small)
+python app.py                    # runs the scraper (seed + 2h poll) AND the dashboard, with logging
 ```
+Then open **http://&lt;host&gt;:8080** — stat cards, the **Scraping operations** log
+(start / finish / new / parsed / crashes), the crash-report table (15 fields),
+recent classifications, and an Excel export button.
 
-**Manual commands:**
+### Advanced / manual
 ```bash
-python3 run.py seed 15      # backfill: last 15 days -> classify -> extract
-python3 run.py poll         # one incremental pass (last 2 days)
-python3 export.py out.xlsx  # Excel dump of crash rows
+python3 run.py monitor       # scraper loop only, no UI
+python3 run.py seed 15       # one backfill pass
+python3 run.py poll          # one incremental pass
+python3 export.py out.xlsx   # Excel dump
+RUN_MONITOR=0 python app.py  # UI only (no scraping)
 ```
-
-## Web UI (stats + crash table + export)
-```bash
-pip install flask
-PORT=8080 python3 app.py        # open http://<vps-ip>:8080
-```
-Shows: docs scanned, crash reports found, classified/pending counts, upload date range,
-the crash-report table (15 fields), recent classifications, and an Excel export button.
 
 ## Run as a service (systemd)
 `/etc/systemd/system/nrmonitor.service`:
