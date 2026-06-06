@@ -23,15 +23,48 @@ export OPENAI_MODEL=gpt-4o-mini       # any vision-capable model your key suppor
 ```
 
 ## Run
+
+**Turnkey monitor (recommended)** — seeds the backfill window once, then polls every 2h on its own:
 ```bash
-python3 run.py seed 15      # first run: last 15 days -> classify -> extract
-python3 run.py poll         # incremental: last 2 days (schedule every 2h)
-python3 export.py out.xlsx  # Excel dump of crash rows (fast, indexed query)
+python3 run.py monitor          # SEED_DAYS (default 15) then loops every POLL_SECONDS (default 7200)
 ```
 
-## Schedule (every 2 hours)
+**Manual commands:**
+```bash
+python3 run.py seed 15      # backfill: last 15 days -> classify -> extract
+python3 run.py poll         # one incremental pass (last 2 days)
+python3 export.py out.xlsx  # Excel dump of crash rows
+```
+
+## Web UI (stats + crash table + export)
+```bash
+pip install flask
+PORT=8080 python3 app.py        # open http://<vps-ip>:8080
+```
+Shows: docs scanned, crash reports found, classified/pending counts, upload date range,
+the crash-report table (15 fields), recent classifications, and an Excel export button.
+
+## Run as a service (systemd)
+`/etc/systemd/system/nrmonitor.service`:
+```ini
+[Service]
+WorkingDirectory=/opt/nextrequest-scraper
+Environment=OPENAI_API_KEY=sk-...
+Environment=OPENAI_MODEL=gpt-5-mini
+Environment=SEED_DAYS=2
+ExecStart=/usr/bin/python3 run.py monitor
+Restart=always
+[Install]
+WantedBy=multi-user.target
+```
+```bash
+sudo systemctl enable --now nrmonitor          # monitor loop
+PORT=8080 nohup python3 app.py &               # UI (or a second unit)
+```
+
+## Old-style cron (alternative to `monitor`)
 ```cron
-0 */2 * * *  cd /opt/nextrequest && OPENAI_API_KEY=sk-... python3 run.py poll >> poll.log 2>&1
+0 */2 * * *  cd /opt/nextrequest-scraper && OPENAI_API_KEY=sk-... python3 run.py poll >> poll.log 2>&1
 ```
 
 ## Files

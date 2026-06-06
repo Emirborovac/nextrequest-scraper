@@ -54,18 +54,37 @@ def process(limit=None):
     print("[process] done:", dict(store.counts()))
 
 
+def monitor():
+    """Turnkey: seed the backfill window once (if DB empty), then poll forever."""
+    store.init()
+    if store.counts()["total"] == 0:
+        days = int(os.environ.get("SEED_DAYS", "15"))
+        print("[monitor] empty DB -> seeding last %d days of the '%s' stream" % (days, nr.SEARCH_TERM))
+        harvest(days); process()
+    interval = int(os.environ.get("POLL_SECONDS", "7200"))   # default every 2 hours
+    print("[monitor] poll loop every %d s (Ctrl-C to stop)" % interval)
+    while True:
+        try:
+            harvest(2); process()
+        except Exception as e:
+            print("[monitor] cycle error:", str(e)[:200])
+        time.sleep(interval)
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "seed"
     if cmd == "seed":
         harvest(int(sys.argv[2]) if len(sys.argv) > 2 else 15); process()
     elif cmd == "poll":
         harvest(2); process()
+    elif cmd == "monitor":
+        monitor()
     elif cmd == "harvest":
         harvest(int(sys.argv[2]) if len(sys.argv) > 2 else 15)
     elif cmd == "process":
         store.init(); process(int(sys.argv[2]) if len(sys.argv) > 2 else None)
     else:
-        print("usage: run.py seed [days] | poll | harvest [days] | process [limit]")
+        print("usage: run.py monitor | seed [days] | poll | harvest [days] | process [limit]")
 
 
 if __name__ == "__main__":
