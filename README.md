@@ -30,6 +30,10 @@ python app.py                    # reads .env, runs the scraper (seed + 2h poll)
 ```
 Config is loaded from `.env` automatically (or set the same vars with `export …` — both work).
 `.env` is gitignored, so your key never gets committed.
+
+> **⚠️ Must run from a US IP.** NextRequest blocks non-US requests with `403 Forbidden`.
+> Use a US-based VPS, **or** set `NR_PROXY=http://user:pass@us-proxy:port` in `.env` to tunnel
+> through a US proxy. (A 403 in the operations log = wrong region / no proxy.)
 Then open **http://&lt;host&gt;:8080** — stat cards, the **Scraping operations** log
 (start / finish / new / parsed / crashes), the crash-report table (15 fields),
 recent classifications, and an Excel export button.

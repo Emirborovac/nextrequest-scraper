@@ -2,15 +2,22 @@ import urllib.request, urllib.parse, json, ssl, datetime, os, sys
 
 BASE = os.environ.get("NR_BASE", "https://oaklandca.nextrequest.com")
 SEARCH_TERM = os.environ.get("NR_SEARCH", "redacted")          # monitor the 'redacted' stream (set "" for all docs)
+PROXY = os.environ.get("NR_PROXY") or os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 CTX = ssl.create_default_context(); CTX.check_hostname = False; CTX.verify_mode = ssl.CERT_NONE
 CLASSIFIABLE = {"pdf"}                                          # only classify PDFs (skip video/audio/office)
 MAX_DL = int(os.environ.get("NR_MAX_BYTES", str(30 * 1024 * 1024)))   # skip files > 30MB (videos)
+
+# NextRequest is US-only. From a non-US host, set NR_PROXY (or HTTPS_PROXY) to a US proxy.
+_handlers = [urllib.request.HTTPSHandler(context=CTX)]
+if PROXY:
+    _handlers.append(urllib.request.ProxyHandler({"http": PROXY, "https": PROXY}))
+_OPENER = urllib.request.build_opener(*_handlers)
 
 
 def _get(url, accept="application/json", to=90):
     r = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": accept,
                                              "X-Requested-With": "XMLHttpRequest"})
-    return urllib.request.urlopen(r, timeout=to, context=CTX)
+    return _OPENER.open(r, timeout=to)
 
 
 def _date(s):

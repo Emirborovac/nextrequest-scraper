@@ -88,7 +88,10 @@ def monitor():
     if store.counts()["total"] == 0:
         days = int(os.environ.get("SEED_DAYS", "15"))
         print("[monitor] empty DB -> seeding last %d days of the '%s' stream" % (days, nr.SEARCH_TERM))
-        _cycle("seed", days)
+        try:
+            _cycle("seed", days)
+        except Exception as e:
+            print("[monitor] seed failed: %s -- will keep polling" % str(e)[:140])
     interval = int(os.environ.get("POLL_SECONDS", "7200"))   # default every 2 hours
     print("[monitor] poll loop every %d s (Ctrl-C to stop)" % interval)
     while True:
