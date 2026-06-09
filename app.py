@@ -1,11 +1,11 @@
-import io, os, csv, time
+import io, os, csv, time, sqlite3
 try:
     from dotenv import load_dotenv
     load_dotenv()                      # read config from a .env file if present
 except Exception:
     pass
-from flask import Flask, render_template_string, send_file, abort
-import store, nextrequest as nr
+from flask import Flask, render_template_string, send_file, abort, request
+import store, nextrequest as nr, ma_csv
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
@@ -96,7 +96,7 @@ def index():
     runs = c.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 25").fetchall()
     c.close()
     return render_template_string(PAGE, stats=stats, by_status=by_status, dr=dr,
-                                  crashes=crashes, recent=recent, runs=runs, ma=ma_status(),
+                                  crashes=crashes, recent=recent, runs=runs,
                                   fields=store.EXCEL_FIELDS, labels=store.EXCEL_LABELS,
                                   base=nr.BASE, term=nr.SEARCH_TERM,
                                   refresh=int(os.environ.get("REFRESH_SECS", "20")))
@@ -119,92 +119,115 @@ def export():
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-MA_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ma_exports",
-                      "massachusetts_crash_vehicle_latest.csv")
+MA_DB = os.environ.get("MA_DB", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ma.db"))
 
 
-def ma_status():
-    if not os.path.exists(MA_CSV):
+def ma_meta():
+    if not os.path.exists(MA_DB):
         return None
-    rows = 0; cols = 0; dmin = dmax = None
-    with open(MA_CSV, newline="", encoding="utf-8") as f:
-        r = csv.reader(f)
-        header = next(r, None)
-        cols = len(header) if header else 0
-        di = header.index("CRASH_DATE_TEXT") if header and "CRASH_DATE_TEXT" in header else None
-        for row in r:
-            rows += 1
-            if di is not None and di < len(row) and row[di]:
-                d = row[di]
-                dmin = d if (dmin is None or d < dmin) else dmin
-                dmax = d if (dmax is None or d > dmax) else dmax
-    return {"rows": rows, "cols": cols, "dmin": dmin, "dmax": dmax,
-            "updated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(os.path.getmtime(MA_CSV)))}
+    c = sqlite3.connect(MA_DB)
+    try:
+        row = c.execute("SELECT MIN(crash_date_iso), MAX(crash_date_iso), "
+                        "COUNT(*), COUNT(DISTINCT CRASH_NUMB) FROM ma").fetchone()
+    except Exception:
+        c.close(); return None
+    c.close()
+    if not row or row[0] is None:
+        return None
+    return {"dmin": row[0], "dmax": row[1], "vehicles": row[2], "accidents": row[3],
+            "updated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(os.path.getmtime(MA_DB)))}
 
 
 @app.route("/ma.csv")
 def ma_download():
-    if not os.path.exists(MA_CSV):
+    meta = ma_meta()
+    if not meta:
         abort(404)
-    return send_file(MA_CSV, as_attachment=True,
-                     download_name="massachusetts_crash_vehicle.csv", mimetype="text/csv")
-
-
-def ma_preview(n=50):
-    if not os.path.exists(MA_CSV):
-        return [], []
-    with open(MA_CSV, newline="", encoding="utf-8") as f:
-        r = csv.reader(f)
-        header = next(r, [])
-        rows = []
-        for i, row in enumerate(r):
-            if i >= n:
-                break
-            rows.append(row)
-    return header, rows
+    frm = request.args.get("from") or meta["dmin"]
+    to = request.args.get("to") or meta["dmax"]
+    cols = ma_csv.COLUMNS
+    c = sqlite3.connect(MA_DB)
+    rows = c.execute('SELECT %s FROM ma WHERE crash_date_iso BETWEEN ? AND ? ORDER BY crash_date_iso DESC'
+                     % ",".join('"%s"' % x for x in cols), (frm, to)).fetchall()
+    c.close()
+    sio = io.StringIO()
+    w = csv.writer(sio); w.writerow(cols); w.writerows(rows)
+    data = io.BytesIO(sio.getvalue().encode("utf-8")); data.seek(0)
+    return send_file(data, as_attachment=True,
+                     download_name="massachusetts_%s_to_%s.csv" % (frm, to), mimetype="text/csv")
 
 
 MA_PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Massachusetts — Crash+Vehicle CSV</title>
+<title>Massachusetts — Crash+Vehicle</title>
 <style>
 :root{--navy:#0b3d91;--ink:#1c2b3a;--muted:#6b7c91;--line:#dfe7f0;}
 *{box-sizing:border-box}body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);background:#fff;font-size:15px}
-.page{max-width:1320px;margin:0 auto;padding:28px 36px 60px}
-h1{color:var(--navy);font-size:1.5rem;margin:0 0 2px}
+.page{max-width:1080px;margin:0 auto;padding:28px 36px 60px}
+h1{color:var(--navy);font-size:1.5rem;margin:0 0 2px}h2{color:var(--navy);font-size:1.05rem;margin:22px 0 8px}
 .sub{color:var(--muted);margin:0 0 10px;font-size:.9rem}
 .nav{display:flex;gap:6px;margin:4px 0 18px;border-bottom:2px solid var(--line)}
 .nav a{padding:8px 16px;text-decoration:none;color:var(--muted);font-weight:600;border-bottom:3px solid transparent;margin-bottom:-2px}
 .nav a.on{color:var(--navy);border-bottom-color:var(--navy)}
-a.btn{display:inline-block;background:var(--navy);color:#fff;text-decoration:none;padding:12px 22px;border-radius:6px;font-weight:700;font-size:1rem}
+a.btn{display:inline-block;background:var(--navy);color:#fff;text-decoration:none;padding:11px 20px;border-radius:6px;font-weight:700;font-size:.95rem}
 a.btn:hover{background:#0a2f73}
-.meta{color:var(--muted);font-size:.85rem;margin:10px 0 14px}
-.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;margin-top:10px}
-table{border-collapse:collapse;font-size:.78rem}
-th{text-align:left;color:var(--navy);border-bottom:2px solid var(--navy);padding:6px 8px;white-space:nowrap;position:sticky;top:0;background:#fff}
-td{padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.filter{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:6px 0 16px}
+.filter label{font-size:.8rem;color:var(--muted);display:flex;flex-direction:column;gap:3px}
+.filter input{border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:.9rem}
+.filter button{background:var(--navy);color:#fff;border:0;border-radius:6px;padding:8px 16px;font-weight:600;cursor:pointer}
+.cards{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0}
+.card{border:1px solid var(--line);border-radius:8px;padding:12px 18px;min-width:140px}
+.card .n{font-size:1.7rem;font-weight:700;color:var(--navy)}.card .l{color:var(--muted);font-size:.8rem}
+.meta{color:var(--muted);font-size:.82rem;margin:6px 0 12px}
+table{border-collapse:collapse;font-size:.86rem;width:100%;max-width:580px}
+th{text-align:left;color:var(--navy);border-bottom:2px solid var(--navy);padding:6px 10px}
+td{padding:5px 10px;border-bottom:1px solid var(--line)}
+.bar{display:inline-block;height:11px;background:var(--navy);border-radius:2px;vertical-align:middle}
 .empty{color:var(--muted);padding:18px}
 </style></head><body><div class="page">
 <h1>Crash Data Console</h1>
 <div class="nav"><a href="/">Oakland &middot; NextRequest</a><a href="/massachusetts" class="on">Massachusetts</a></div>
-<p class="sub">MassDOT IMPACT &middot; Crash + Vehicle (VINs) &middot; exact client column set &middot; refreshed daily</p>
-{% if status %}
-<a class="btn" href="/ma.csv">&#8595; Download latest CSV ({{ "{:,}".format(status.rows) }} rows)</a>
-<p class="meta">Dates {{ status.dmin }} &rarr; {{ status.dmax }} &middot; {{ status.cols }} columns &middot; updated {{ status.updated }}</p>
-<div class="wrap"><table><thead><tr>{% for h in header %}<th>{{ h }}</th>{% endfor %}</tr></thead><tbody>
-{% for row in preview %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}
-</tbody></table></div>
-<p class="meta">Showing first {{ preview|length }} of {{ "{:,}".format(status.rows) }} rows &mdash; download for the full file.</p>
+<p class="sub">MassDOT IMPACT &middot; Crash + Vehicle (VINs) &middot; 52-column CSV &middot; refreshed daily</p>
+{% if meta %}
+<form class="filter" method="get" action="/massachusetts">
+  <label>From<input type="date" name="from" value="{{ frm }}" min="{{ meta.dmin }}" max="{{ meta.dmax }}"></label>
+  <label>To<input type="date" name="to" value="{{ to }}" min="{{ meta.dmin }}" max="{{ meta.dmax }}"></label>
+  <button type="submit">Apply</button>
+</form>
+<div class="cards">
+  <div class="card"><div class="n">{{ "{:,}".format(tot_accidents) }}</div><div class="l">accidents in range</div></div>
+  <div class="card"><div class="n">{{ "{:,}".format(tot_rows) }}</div><div class="l">vehicle rows (CSV)</div></div>
+</div>
+<a class="btn" href="/ma.csv?from={{ frm }}&amp;to={{ to }}">&#8595; Download CSV for {{ frm }} &rarr; {{ to }}</a>
+<p class="meta">Data available {{ meta.dmin }} &rarr; {{ meta.dmax }} &middot; updated {{ meta.updated }}</p>
+<h2>Accidents per day</h2>
+<table><thead><tr><th>Date</th><th>Accidents</th><th></th></tr></thead><tbody>
+{% for d, n in perday %}<tr><td>{{ d }}</td><td>{{ n }}</td><td><span class="bar" style="width:{{ (n * 240 // maxc) if maxc else 0 }}px"></span></td></tr>{% endfor %}
+{% if not perday %}<tr><td colspan="3" class="empty">No accidents in this range.</td></tr>{% endif %}
+</tbody></table>
 {% else %}
-<p class="empty">No CSV generated yet &mdash; it builds automatically each morning.</p>
+<p class="empty">No data yet &mdash; the Massachusetts cache builds automatically each morning.</p>
 {% endif %}
 </div></body></html>"""
 
 
 @app.route("/massachusetts")
 def massachusetts():
-    header, preview = ma_preview(50)
-    return render_template_string(MA_PAGE, status=ma_status(), header=header, preview=preview)
+    meta = ma_meta()
+    if not meta:
+        return render_template_string(MA_PAGE, meta=None)
+    frm = request.args.get("from") or meta["dmin"]
+    to = request.args.get("to") or meta["dmax"]
+    c = sqlite3.connect(MA_DB)
+    perday = c.execute("SELECT crash_date_iso, COUNT(DISTINCT CRASH_NUMB) FROM ma "
+                       "WHERE crash_date_iso BETWEEN ? AND ? GROUP BY crash_date_iso "
+                       "ORDER BY crash_date_iso DESC", (frm, to)).fetchall()
+    tot = c.execute("SELECT COUNT(DISTINCT CRASH_NUMB), COUNT(*) FROM ma "
+                    "WHERE crash_date_iso BETWEEN ? AND ?", (frm, to)).fetchone()
+    c.close()
+    maxc = max([p[1] for p in perday], default=1)
+    return render_template_string(MA_PAGE, meta=meta, frm=frm, to=to, perday=perday,
+                                  tot_accidents=tot[0], tot_rows=tot[1], maxc=maxc)
 
 
 if __name__ == "__main__":
