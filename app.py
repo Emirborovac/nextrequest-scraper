@@ -1,10 +1,10 @@
-import io, os
+import io, os, csv, time
 try:
     from dotenv import load_dotenv
     load_dotenv()                      # read config from a .env file if present
 except Exception:
     pass
-from flask import Flask, render_template_string, send_file
+from flask import Flask, render_template_string, send_file, abort
 import store, nextrequest as nr
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
@@ -49,6 +49,12 @@ a{color:var(--navy)}
   &middot; statuses: {% for k,v in by_status.items() %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
 <a class="btn" href="/export.xlsx">&#8595; Export crash reports (Excel)</a>
 
+{% if ma %}
+<h2>Massachusetts &mdash; daily CSV (Crash + Vehicle, VINs)</h2>
+<p class="meta">{{ "{:,}".format(ma.rows) }} rows &middot; {{ ma.cols }} columns &middot; dates {{ ma.dmin }} &rarr; {{ ma.dmax }} &middot; updated {{ ma.updated }}</p>
+<a class="btn" href="/ma.csv">&#8595; Download Massachusetts CSV (exact 52 columns)</a>
+{% endif %}
+
 <h2>Scraping operations</h2>
 <div class="wrap"><table><thead><tr><th>#</th><th>Type</th><th>Started (UTC)</th><th>Finished (UTC)</th>
 <th>New docs</th><th>Parsed</th><th>Crashes</th><th>Status</th></tr></thead><tbody>
@@ -92,7 +98,7 @@ def index():
     runs = c.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 25").fetchall()
     c.close()
     return render_template_string(PAGE, stats=stats, by_status=by_status, dr=dr,
-                                  crashes=crashes, recent=recent, runs=runs,
+                                  crashes=crashes, recent=recent, runs=runs, ma=ma_status(),
                                   fields=store.EXCEL_FIELDS, labels=store.EXCEL_LABELS,
                                   base=nr.BASE, term=nr.SEARCH_TERM,
                                   refresh=int(os.environ.get("REFRESH_SECS", "20")))
@@ -113,6 +119,37 @@ def export():
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
     return send_file(bio, as_attachment=True, download_name="crash_reports.xlsx",
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+MA_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ma_exports",
+                      "massachusetts_crash_vehicle_latest.csv")
+
+
+def ma_status():
+    if not os.path.exists(MA_CSV):
+        return None
+    rows = 0; cols = 0; dmin = dmax = None
+    with open(MA_CSV, newline="", encoding="utf-8") as f:
+        r = csv.reader(f)
+        header = next(r, None)
+        cols = len(header) if header else 0
+        di = header.index("CRASH_DATE_TEXT") if header and "CRASH_DATE_TEXT" in header else None
+        for row in r:
+            rows += 1
+            if di is not None and di < len(row) and row[di]:
+                d = row[di]
+                dmin = d if (dmin is None or d < dmin) else dmin
+                dmax = d if (dmax is None or d > dmax) else dmax
+    return {"rows": rows, "cols": cols, "dmin": dmin, "dmax": dmax,
+            "updated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(os.path.getmtime(MA_CSV)))}
+
+
+@app.route("/ma.csv")
+def ma_download():
+    if not os.path.exists(MA_CSV):
+        abort(404)
+    return send_file(MA_CSV, as_attachment=True,
+                     download_name="massachusetts_crash_vehicle.csv", mimetype="text/csv")
 
 
 if __name__ == "__main__":

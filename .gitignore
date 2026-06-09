@@ -4,5 +4,7 @@ __pycache__/
 *.db-wal
 *.db-shm
 *.xlsx
+*.csv
 *.log
 .env
+ma_exports/
