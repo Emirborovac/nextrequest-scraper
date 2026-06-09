@@ -1,4 +1,4 @@
-import io, os, csv, time, sqlite3
+import io, os, csv, time, sqlite3, datetime
 try:
     from dotenv import load_dotenv
     load_dotenv()                      # read config from a .env file if present
@@ -161,50 +161,62 @@ MA_PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Massachusetts — Crash+Vehicle</title>
 <style>
-:root{--navy:#0b3d91;--ink:#1c2b3a;--muted:#6b7c91;--line:#dfe7f0;}
-*{box-sizing:border-box}body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);background:#fff;font-size:15px}
-.page{max-width:1080px;margin:0 auto;padding:28px 36px 60px}
-h1{color:var(--navy);font-size:1.5rem;margin:0 0 2px}h2{color:var(--navy);font-size:1.05rem;margin:22px 0 8px}
-.sub{color:var(--muted);margin:0 0 10px;font-size:.9rem}
-.nav{display:flex;gap:6px;margin:4px 0 18px;border-bottom:2px solid var(--line)}
+:root{--navy:#0b3d91;--ink:#1c2b3a;--muted:#6b7c91;--line:#dfe7f0;--soft:#f5f9ff;}
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);background:#fafbfd;font-size:15px}
+.page{max-width:960px;margin:0 auto;padding:28px 32px 60px;background:#fff}
+h1{color:var(--navy);font-size:1.5rem;margin:0 0 2px}
+.sub{color:var(--muted);margin:0 0 14px;font-size:.88rem}
+.nav{display:flex;gap:6px;margin:4px 0 20px;border-bottom:2px solid var(--line)}
 .nav a{padding:8px 16px;text-decoration:none;color:var(--muted);font-weight:600;border-bottom:3px solid transparent;margin-bottom:-2px}
 .nav a.on{color:var(--navy);border-bottom-color:var(--navy)}
-a.btn{display:inline-block;background:var(--navy);color:#fff;text-decoration:none;padding:11px 20px;border-radius:6px;font-weight:700;font-size:.95rem}
+.controls{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:16px}
+.filter{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.filter label{font-size:.72rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em;display:flex;flex-direction:column;gap:4px}
+.filter input{border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:.9rem;color:var(--ink)}
+.filter button{background:var(--navy);color:#fff;border:0;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:.9rem}
+a.btn{display:inline-block;background:var(--navy);color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:700;font-size:.9rem;white-space:nowrap}
 a.btn:hover{background:#0a2f73}
-.filter{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin:6px 0 16px}
-.filter label{font-size:.8rem;color:var(--muted);display:flex;flex-direction:column;gap:3px}
-.filter input{border:1px solid var(--line);border-radius:6px;padding:7px 9px;font-size:.9rem}
-.filter button{background:var(--navy);color:#fff;border:0;border-radius:6px;padding:8px 16px;font-weight:600;cursor:pointer}
-.cards{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0}
-.card{border:1px solid var(--line);border-radius:8px;padding:12px 18px;min-width:140px}
-.card .n{font-size:1.7rem;font-weight:700;color:var(--navy)}.card .l{color:var(--muted);font-size:.8rem}
-.meta{color:var(--muted);font-size:.82rem;margin:6px 0 12px}
-table{border-collapse:collapse;font-size:.86rem;width:100%;max-width:580px}
-th{text-align:left;color:var(--navy);border-bottom:2px solid var(--navy);padding:6px 10px}
-td{padding:5px 10px;border-bottom:1px solid var(--line)}
-.bar{display:inline-block;height:11px;background:var(--navy);border-radius:2px;vertical-align:middle}
-.empty{color:var(--muted);padding:18px}
+.cards{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 8px}
+.card{flex:1;min-width:150px;border:1px solid var(--line);border-radius:10px;padding:14px 18px;text-align:center}
+.card .n{font-size:1.8rem;font-weight:700;color:var(--navy)}.card .l{color:var(--muted);font-size:.8rem;margin-top:2px}
+.meta{color:var(--muted);font-size:.8rem;margin:10px 0 16px}
+.panel{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.panel-h{padding:10px 16px;border-bottom:1px solid var(--line);background:var(--soft);font-weight:600;color:var(--navy);font-size:.95rem}
+.scroll{max-height:430px;overflow:auto}
+table{border-collapse:collapse;font-size:.86rem;width:100%}
+th{text-align:left;color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid var(--line);padding:8px 16px;position:sticky;top:0;background:#fff}
+td{padding:7px 16px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+td.num{text-align:right;font-weight:600;width:100px}
+.barcell{width:55%}
+.bar{display:block;height:12px;background:var(--navy);border-radius:3px;min-width:2px}
+.empty{color:var(--muted);padding:22px;text-align:center}
 </style></head><body><div class="page">
 <h1>Crash Data Console</h1>
 <div class="nav"><a href="/">Oakland &middot; NextRequest</a><a href="/massachusetts" class="on">Massachusetts</a></div>
 <p class="sub">MassDOT IMPACT &middot; Crash + Vehicle (VINs) &middot; 52-column CSV &middot; refreshed daily</p>
 {% if meta %}
-<form class="filter" method="get" action="/massachusetts">
-  <label>From<input type="date" name="from" value="{{ frm }}" min="{{ meta.dmin }}" max="{{ meta.dmax }}"></label>
-  <label>To<input type="date" name="to" value="{{ to }}" min="{{ meta.dmin }}" max="{{ meta.dmax }}"></label>
-  <button type="submit">Apply</button>
-</form>
+<div class="controls">
+  <form class="filter" method="get" action="/massachusetts">
+    <label>From<input type="date" name="from" value="{{ frm }}" min="{{ meta.dmin }}" max="{{ meta.dmax }}"></label>
+    <label>To<input type="date" name="to" value="{{ to }}" min="{{ meta.dmin }}" max="{{ meta.dmax }}"></label>
+    <button type="submit">Apply</button>
+  </form>
+  <a class="btn" href="/ma.csv?from={{ frm }}&amp;to={{ to }}">&#8595; Download CSV ({{ "{:,}".format(tot_rows) }} rows)</a>
+</div>
 <div class="cards">
   <div class="card"><div class="n">{{ "{:,}".format(tot_accidents) }}</div><div class="l">accidents in range</div></div>
   <div class="card"><div class="n">{{ "{:,}".format(tot_rows) }}</div><div class="l">vehicle rows (CSV)</div></div>
+  <div class="card"><div class="n">{{ perday|length }}</div><div class="l">days</div></div>
 </div>
-<a class="btn" href="/ma.csv?from={{ frm }}&amp;to={{ to }}">&#8595; Download CSV for {{ frm }} &rarr; {{ to }}</a>
-<p class="meta">Data available {{ meta.dmin }} &rarr; {{ meta.dmax }} &middot; updated {{ meta.updated }}</p>
-<h2>Accidents per day</h2>
-<table><thead><tr><th>Date</th><th>Accidents</th><th></th></tr></thead><tbody>
-{% for d, n in perday %}<tr><td>{{ d }}</td><td>{{ n }}</td><td><span class="bar" style="width:{{ (n * 240 // maxc) if maxc else 0 }}px"></span></td></tr>{% endfor %}
-{% if not perday %}<tr><td colspan="3" class="empty">No accidents in this range.</td></tr>{% endif %}
-</tbody></table>
+<p class="meta">Range <b>{{ frm }} &rarr; {{ to }}</b> &middot; data available {{ meta.dmin }} &rarr; {{ meta.dmax }} &middot; updated {{ meta.updated }}</p>
+<div class="panel">
+  <div class="panel-h">Accidents per day</div>
+  <div class="scroll"><table><thead><tr><th>Date</th><th class="num">Accidents</th><th class="barcell"></th></tr></thead><tbody>
+  {% for d, n in perday %}<tr><td>{{ d }}</td><td class="num">{{ n }}</td><td class="barcell"><span class="bar" style="width:{{ (n * 100 // maxc) if maxc else 0 }}%"></span></td></tr>{% endfor %}
+  {% if not perday %}<tr><td colspan="3" class="empty">No accidents in this range.</td></tr>{% endif %}
+  </tbody></table></div>
+</div>
 {% else %}
 <p class="empty">No data yet &mdash; the Massachusetts cache builds automatically each morning.</p>
 {% endif %}
@@ -216,7 +228,12 @@ def massachusetts():
     meta = ma_meta()
     if not meta:
         return render_template_string(MA_PAGE, meta=None)
-    frm = request.args.get("from") or meta["dmin"]
+    try:                                   # default view = last 30 days of available data
+        default_from = max(datetime.date.fromisoformat(meta["dmax"]) - datetime.timedelta(days=30),
+                           datetime.date.fromisoformat(meta["dmin"])).isoformat()
+    except Exception:
+        default_from = meta["dmin"]
+    frm = request.args.get("from") or default_from
     to = request.args.get("to") or meta["dmax"]
     c = sqlite3.connect(MA_DB)
     perday = c.execute("SELECT crash_date_iso, COUNT(DISTINCT CRASH_NUMB) FROM ma "
