@@ -36,8 +36,12 @@ tr.yes{background:var(--pale)}
 .wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px}
 .empty{color:var(--muted);text-align:center;padding:18px}
 a{color:var(--navy)}
+.nav{display:flex;gap:6px;margin:4px 0 18px;border-bottom:2px solid var(--line)}
+.nav a{padding:8px 16px;text-decoration:none;color:var(--muted);font-weight:600;border-bottom:3px solid transparent;margin-bottom:-2px}
+.nav a.on{color:var(--navy);border-bottom-color:var(--navy)}
 </style></head><body><div class="page">
-<h1>NextRequest Crash-Report Monitor</h1>
+<h1>Crash Data Console</h1>
+<div class="nav"><a href="/" class="on">Oakland &middot; NextRequest</a><a href="/massachusetts">Massachusetts</a></div>
 <p class="sub">Source: {{ base }} &middot; monitoring stream: &ldquo;{{ term or 'all' }}&rdquo;{% if refresh %} &middot; auto-refreshes every {{ refresh }}s{% endif %}</p>
 <div class="cards">
   <div class="card"><div class="n">{{ "{:,}".format(stats.total) }}</div><div class="l">docs scanned</div></div>
@@ -48,12 +52,6 @@ a{color:var(--navy)}
 <p class="meta">Upload date range: <b>{{ dr[0] or '—' }} &rarr; {{ dr[1] or '—' }}</b>
   &middot; statuses: {% for k,v in by_status.items() %}{{ k }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
 <a class="btn" href="/export.xlsx">&#8595; Export crash reports (Excel)</a>
-
-{% if ma %}
-<h2>Massachusetts &mdash; daily CSV (Crash + Vehicle, VINs)</h2>
-<p class="meta">{{ "{:,}".format(ma.rows) }} rows &middot; {{ ma.cols }} columns &middot; dates {{ ma.dmin }} &rarr; {{ ma.dmax }} &middot; updated {{ ma.updated }}</p>
-<a class="btn" href="/ma.csv">&#8595; Download Massachusetts CSV (exact 52 columns)</a>
-{% endif %}
 
 <h2>Scraping operations</h2>
 <div class="wrap"><table><thead><tr><th>#</th><th>Type</th><th>Started (UTC)</th><th>Finished (UTC)</th>
@@ -150,6 +148,63 @@ def ma_download():
         abort(404)
     return send_file(MA_CSV, as_attachment=True,
                      download_name="massachusetts_crash_vehicle.csv", mimetype="text/csv")
+
+
+def ma_preview(n=50):
+    if not os.path.exists(MA_CSV):
+        return [], []
+    with open(MA_CSV, newline="", encoding="utf-8") as f:
+        r = csv.reader(f)
+        header = next(r, [])
+        rows = []
+        for i, row in enumerate(r):
+            if i >= n:
+                break
+            rows.append(row)
+    return header, rows
+
+
+MA_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Massachusetts — Crash+Vehicle CSV</title>
+<style>
+:root{--navy:#0b3d91;--ink:#1c2b3a;--muted:#6b7c91;--line:#dfe7f0;}
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);background:#fff;font-size:15px}
+.page{max-width:1320px;margin:0 auto;padding:28px 36px 60px}
+h1{color:var(--navy);font-size:1.5rem;margin:0 0 2px}
+.sub{color:var(--muted);margin:0 0 10px;font-size:.9rem}
+.nav{display:flex;gap:6px;margin:4px 0 18px;border-bottom:2px solid var(--line)}
+.nav a{padding:8px 16px;text-decoration:none;color:var(--muted);font-weight:600;border-bottom:3px solid transparent;margin-bottom:-2px}
+.nav a.on{color:var(--navy);border-bottom-color:var(--navy)}
+a.btn{display:inline-block;background:var(--navy);color:#fff;text-decoration:none;padding:12px 22px;border-radius:6px;font-weight:700;font-size:1rem}
+a.btn:hover{background:#0a2f73}
+.meta{color:var(--muted);font-size:.85rem;margin:10px 0 14px}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;margin-top:10px}
+table{border-collapse:collapse;font-size:.78rem}
+th{text-align:left;color:var(--navy);border-bottom:2px solid var(--navy);padding:6px 8px;white-space:nowrap;position:sticky;top:0;background:#fff}
+td{padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.empty{color:var(--muted);padding:18px}
+</style></head><body><div class="page">
+<h1>Crash Data Console</h1>
+<div class="nav"><a href="/">Oakland &middot; NextRequest</a><a href="/massachusetts" class="on">Massachusetts</a></div>
+<p class="sub">MassDOT IMPACT &middot; Crash + Vehicle (VINs) &middot; exact client column set &middot; refreshed daily</p>
+{% if status %}
+<a class="btn" href="/ma.csv">&#8595; Download latest CSV ({{ "{:,}".format(status.rows) }} rows)</a>
+<p class="meta">Dates {{ status.dmin }} &rarr; {{ status.dmax }} &middot; {{ status.cols }} columns &middot; updated {{ status.updated }}</p>
+<div class="wrap"><table><thead><tr>{% for h in header %}<th>{{ h }}</th>{% endfor %}</tr></thead><tbody>
+{% for row in preview %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}
+</tbody></table></div>
+<p class="meta">Showing first {{ preview|length }} of {{ "{:,}".format(status.rows) }} rows &mdash; download for the full file.</p>
+{% else %}
+<p class="empty">No CSV generated yet &mdash; it builds automatically each morning.</p>
+{% endif %}
+</div></body></html>"""
+
+
+@app.route("/massachusetts")
+def massachusetts():
+    header, preview = ma_preview(50)
+    return render_template_string(MA_PAGE, status=ma_status(), header=header, preview=preview)
 
 
 if __name__ == "__main__":
