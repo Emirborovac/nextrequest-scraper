@@ -271,7 +271,7 @@ def _ca_fault_clause(fault):
     if fault == "yes":
         return " AND is_at_fault='Y'"
     if fault == "no":
-        return " AND is_at_fault='N'"
+        return " AND COALESCE(is_at_fault,'')<>'Y'"
     return ""
 
 
