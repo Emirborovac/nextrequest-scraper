@@ -5,7 +5,7 @@ try:
 except Exception:
     pass
 from flask import Flask, render_template_string, send_file, abort, request
-import store, nextrequest as nr, ma_csv
+import store, nextrequest as nr, ma_csv, ca_csv
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
@@ -41,7 +41,7 @@ a{color:var(--navy)}
 .nav a.on{color:var(--navy);border-bottom-color:var(--navy)}
 </style></head><body><div class="page">
 <h1>Crash Data Console</h1>
-<div class="nav"><a href="/" class="on">Oakland &middot; NextRequest</a><a href="/massachusetts">Massachusetts</a></div>
+<div class="nav"><a href="/" class="on">Oakland &middot; NextRequest</a><a href="/massachusetts">Massachusetts</a><a href="/california">California</a></div>
 <p class="sub">Source: {{ base }} &middot; monitoring stream: &ldquo;{{ term or 'all' }}&rdquo;{% if refresh %} &middot; auto-refreshes every {{ refresh }}s{% endif %}</p>
 <div class="cards">
   <div class="card"><div class="n">{{ "{:,}".format(stats.total) }}</div><div class="l">docs scanned</div></div>
@@ -193,7 +193,7 @@ td.num{text-align:right;font-weight:600;width:100px}
 .empty{color:var(--muted);padding:22px;text-align:center}
 </style></head><body><div class="page">
 <h1>Crash Data Console</h1>
-<div class="nav"><a href="/">Oakland &middot; NextRequest</a><a href="/massachusetts" class="on">Massachusetts</a></div>
+<div class="nav"><a href="/">Oakland &middot; NextRequest</a><a href="/massachusetts" class="on">Massachusetts</a><a href="/california">California</a></div>
 <p class="sub">MassDOT IMPACT &middot; Crash + Vehicle (VINs) &middot; 52-column CSV &middot; refreshed daily</p>
 {% if meta %}
 <div class="controls">
@@ -244,6 +244,150 @@ def massachusetts():
     c.close()
     maxc = max([p[1] for p in perday], default=1)
     return render_template_string(MA_PAGE, meta=meta, frm=frm, to=to, perday=perday,
+                                  tot_accidents=tot[0], tot_rows=tot[1], maxc=maxc)
+
+
+# ---------------- California (CCRS) ----------------
+CA_DB = os.environ.get("CA_DB", os.path.join(os.path.dirname(os.path.abspath(__file__)), "ca.db"))
+
+
+def ca_meta():
+    if not os.path.exists(CA_DB):
+        return None
+    c = sqlite3.connect(CA_DB)
+    try:
+        row = c.execute("SELECT MIN(crash_date_iso), MAX(crash_date_iso), COUNT(*), "
+                        "COUNT(DISTINCT collision_id) FROM ca").fetchone()
+    except Exception:
+        c.close(); return None
+    c.close()
+    if not row or row[0] is None:
+        return None
+    return {"dmin": row[0], "dmax": row[1], "rows": row[2], "accidents": row[3],
+            "updated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(os.path.getmtime(CA_DB)))}
+
+
+def _ca_fault_clause(fault):
+    if fault == "yes":
+        return " AND is_at_fault='Y'"
+    if fault == "no":
+        return " AND is_at_fault='N'"
+    return ""
+
+
+@app.route("/ca.csv")
+def ca_download():
+    meta = ca_meta()
+    if not meta:
+        abort(404)
+    frm = request.args.get("from") or meta["dmin"]
+    to = request.args.get("to") or meta["dmax"]
+    fault = request.args.get("fault", "all")
+    cols = ca_csv.COLUMNS
+    c = sqlite3.connect(CA_DB)
+    rows = c.execute('SELECT %s FROM ca WHERE crash_date_iso BETWEEN ? AND ?%s ORDER BY crash_date_iso DESC'
+                     % (",".join('"%s"' % x for x in cols), _ca_fault_clause(fault)), (frm, to)).fetchall()
+    c.close()
+    sio = io.StringIO()
+    w = csv.writer(sio); w.writerow(cols); w.writerows(rows)
+    data = io.BytesIO(sio.getvalue().encode("utf-8")); data.seek(0)
+    return send_file(data, as_attachment=True,
+                     download_name="california_%s_to_%s_%s.csv" % (frm, to, fault), mimetype="text/csv")
+
+
+CA_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>California — CCRS</title>
+<style>
+:root{--navy:#0b3d91;--ink:#1c2b3a;--muted:#6b7c91;--line:#dfe7f0;--soft:#f5f9ff;}
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);background:#fafbfd;font-size:15px}
+.page{max-width:960px;margin:0 auto;padding:28px 32px 60px;background:#fff}
+h1{color:var(--navy);font-size:1.5rem;margin:0 0 2px}
+.sub{color:var(--muted);margin:0 0 14px;font-size:.88rem}
+.nav{display:flex;gap:6px;margin:4px 0 20px;border-bottom:2px solid var(--line)}
+.nav a{padding:8px 16px;text-decoration:none;color:var(--muted);font-weight:600;border-bottom:3px solid transparent;margin-bottom:-2px}
+.nav a.on{color:var(--navy);border-bottom-color:var(--navy)}
+.controls{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:16px}
+.filter{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.filter label{font-size:.72rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em;display:flex;flex-direction:column;gap:4px}
+.filter input,.filter select{border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:.9rem;color:var(--ink);background:#fff}
+.filter button{background:var(--navy);color:#fff;border:0;border-radius:6px;padding:9px 18px;font-weight:600;cursor:pointer;font-size:.9rem}
+a.btn{display:inline-block;background:var(--navy);color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:700;font-size:.9rem;white-space:nowrap}
+a.btn:hover{background:#0a2f73}
+.cards{display:flex;gap:14px;flex-wrap:wrap;margin:0 0 8px}
+.card{flex:1;min-width:150px;border:1px solid var(--line);border-radius:10px;padding:14px 18px;text-align:center}
+.card .n{font-size:1.8rem;font-weight:700;color:var(--navy)}.card .l{color:var(--muted);font-size:.8rem;margin-top:2px}
+.meta{color:var(--muted);font-size:.8rem;margin:10px 0 16px}
+.panel{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.panel-h{padding:10px 16px;border-bottom:1px solid var(--line);background:var(--soft);font-weight:600;color:var(--navy);font-size:.95rem}
+.scroll{max-height:430px;overflow:auto}
+table{border-collapse:collapse;font-size:.86rem;width:100%}
+th{text-align:left;color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid var(--line);padding:8px 16px;position:sticky;top:0;background:#fff}
+td{padding:7px 16px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:0}
+td.num{text-align:right;font-weight:600;width:100px}
+.barcell{width:55%}
+.bar{display:block;height:12px;background:var(--navy);border-radius:3px;min-width:2px}
+.empty{color:var(--muted);padding:22px;text-align:center}
+</style></head><body><div class="page">
+<h1>Crash Data Console</h1>
+<div class="nav"><a href="/">Oakland &middot; NextRequest</a><a href="/massachusetts">Massachusetts</a><a href="/california" class="on">California</a></div>
+<p class="sub">California CCRS (statewide) &middot; Crash + Party join &middot; <b>explicit at-fault filter</b> &middot; refreshed daily</p>
+{% if meta %}
+<div class="controls">
+  <form class="filter" method="get" action="/california">
+    <label>From<input type="date" name="from" value="{{ frm }}" min="{{ meta.dmin }}" max="{{ meta.dmax }}"></label>
+    <label>To<input type="date" name="to" value="{{ to }}" min="{{ meta.dmin }}" max="{{ meta.dmax }}"></label>
+    <label>Fault<select name="fault">
+      <option value="all"{{ ' selected' if fault=='all' else '' }}>All parties</option>
+      <option value="no"{{ ' selected' if fault=='no' else '' }}>Not at fault</option>
+      <option value="yes"{{ ' selected' if fault=='yes' else '' }}>At fault</option>
+    </select></label>
+    <button type="submit">Apply</button>
+  </form>
+  <a class="btn" href="/ca.csv?from={{ frm }}&amp;to={{ to }}&amp;fault={{ fault }}">&#8595; Download CSV ({{ "{:,}".format(tot_rows) }} rows)</a>
+</div>
+<div class="cards">
+  <div class="card"><div class="n">{{ "{:,}".format(tot_accidents) }}</div><div class="l">accidents in range</div></div>
+  <div class="card"><div class="n">{{ "{:,}".format(tot_rows) }}</div><div class="l">party rows ({{ fault }})</div></div>
+</div>
+<p class="meta">Range <b>{{ frm }} &rarr; {{ to }}</b> &middot; fault filter: <b>{{ fault }}</b> &middot; data available {{ meta.dmin }} &rarr; {{ meta.dmax }} &middot; updated {{ meta.updated }}</p>
+<div class="panel">
+  <div class="panel-h">Accidents per day</div>
+  <div class="scroll"><table><thead><tr><th>Date</th><th class="num">Accidents</th><th class="barcell"></th></tr></thead><tbody>
+  {% for d, n in perday %}<tr><td>{{ d }}</td><td class="num">{{ n }}</td><td class="barcell"><span class="bar" style="width:{{ (n * 100 // maxc) if maxc else 0 }}%"></span></td></tr>{% endfor %}
+  {% if not perday %}<tr><td colspan="3" class="empty">No accidents in this range.</td></tr>{% endif %}
+  </tbody></table></div>
+</div>
+{% else %}
+<p class="empty">No data yet &mdash; the California cache builds automatically each morning.</p>
+{% endif %}
+</div></body></html>"""
+
+
+@app.route("/california")
+def california():
+    meta = ca_meta()
+    if not meta:
+        return render_template_string(CA_PAGE, meta=None)
+    try:
+        default_from = max(datetime.date.fromisoformat(meta["dmax"]) - datetime.timedelta(days=30),
+                           datetime.date.fromisoformat(meta["dmin"])).isoformat()
+    except Exception:
+        default_from = meta["dmin"]
+    frm = request.args.get("from") or default_from
+    to = request.args.get("to") or meta["dmax"]
+    fault = request.args.get("fault", "all")
+    fc = _ca_fault_clause(fault)
+    c = sqlite3.connect(CA_DB)
+    perday = c.execute("SELECT crash_date_iso, COUNT(DISTINCT collision_id) FROM ca "
+                       "WHERE crash_date_iso BETWEEN ? AND ?" + fc +
+                       " GROUP BY crash_date_iso ORDER BY crash_date_iso DESC", (frm, to)).fetchall()
+    tot = c.execute("SELECT COUNT(DISTINCT collision_id), COUNT(*) FROM ca "
+                    "WHERE crash_date_iso BETWEEN ? AND ?" + fc, (frm, to)).fetchone()
+    c.close()
+    maxc = max([p[1] for p in perday], default=1)
+    return render_template_string(CA_PAGE, meta=meta, frm=frm, to=to, fault=fault, perday=perday,
                                   tot_accidents=tot[0], tot_rows=tot[1], maxc=maxc)
 
 
