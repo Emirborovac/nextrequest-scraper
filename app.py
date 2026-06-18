@@ -5,11 +5,12 @@ try:
 except Exception:
     pass
 from flask import Flask, render_template_string, send_file, abort, request
-import store, nextrequest as nr, ma_csv, ca_csv
+import store, nextrequest as nr, ma_csv, ca_csv, iowa_tab
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 
 app = Flask(__name__)
+app.register_blueprint(iowa_tab.bp)
 store.init()
 
 PAGE = """<!doctype html>
@@ -41,7 +42,7 @@ a{color:var(--navy)}
 .nav a.on{color:var(--navy);border-bottom-color:var(--navy)}
 </style></head><body><div class="page">
 <h1>Crash Data Console</h1>
-<div class="nav"><a href="/" class="on">Oakland &middot; NextRequest</a><a href="/massachusetts">Massachusetts</a><a href="/california">California</a></div>
+<div class="nav"><a href="/" class="on">Oakland &middot; NextRequest</a><a href="/massachusetts">Massachusetts</a><a href="/california">California</a><a href="/iowa">Iowa</a></div>
 <p class="sub">Source: {{ base }} &middot; monitoring stream: &ldquo;{{ term or 'all' }}&rdquo;{% if refresh %} &middot; auto-refreshes every {{ refresh }}s{% endif %}</p>
 <div class="cards">
   <div class="card"><div class="n">{{ "{:,}".format(stats.total) }}</div><div class="l">docs scanned</div></div>
@@ -193,7 +194,7 @@ td.num{text-align:right;font-weight:600;width:100px}
 .empty{color:var(--muted);padding:22px;text-align:center}
 </style></head><body><div class="page">
 <h1>Crash Data Console</h1>
-<div class="nav"><a href="/">Oakland &middot; NextRequest</a><a href="/massachusetts" class="on">Massachusetts</a><a href="/california">California</a></div>
+<div class="nav"><a href="/">Oakland &middot; NextRequest</a><a href="/massachusetts" class="on">Massachusetts</a><a href="/california">California</a><a href="/iowa">Iowa</a></div>
 <p class="sub">MassDOT IMPACT &middot; Crash + Vehicle (VINs) &middot; 52-column CSV &middot; refreshed daily</p>
 {% if meta %}
 <div class="controls">
@@ -331,7 +332,7 @@ td.num{text-align:right;font-weight:600;width:100px}
 .empty{color:var(--muted);padding:22px;text-align:center}
 </style></head><body><div class="page">
 <h1>Crash Data Console</h1>
-<div class="nav"><a href="/">Oakland &middot; NextRequest</a><a href="/massachusetts">Massachusetts</a><a href="/california" class="on">California</a></div>
+<div class="nav"><a href="/">Oakland &middot; NextRequest</a><a href="/massachusetts">Massachusetts</a><a href="/california" class="on">California</a><a href="/iowa">Iowa</a></div>
 <p class="sub">California CCRS (statewide) &middot; Crash + Party join &middot; <b>explicit at-fault filter</b> &middot; refreshed daily</p>
 {% if meta %}
 <div class="controls">
